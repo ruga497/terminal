@@ -545,6 +545,8 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         // settings might be out-of-proc in the future
         auto settings{ _core.Settings() };
 
+        _useRightClickContextMenu = settings.RightClickContextMenu();
+
         // Apply padding as swapChainPanel's margin
         const auto newMargin = ParseThicknessFromPadding(settings.Padding());
         SwapChainPanel().Margin(newMargin);
@@ -3316,6 +3318,16 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         return _core.ScrollMarks();
     }
 
+    void TermControl::SelectCommand(const bool goUp)
+    {
+        _core.SelectCommand(goUp);
+    }
+
+    void TermControl::SelectOutput(const bool goUp)
+    {
+        _core.SelectOutput(goUp);
+    }
+
     void TermControl::ColorSelection(Control::SelectionColor fg, Control::SelectionColor bg, Core::MatchMode matchMode)
     {
         _core.ColorSelection(fg, bg, matchMode);
@@ -3339,6 +3351,15 @@ namespace winrt::Microsoft::Terminal::Control::implementation
 
         const auto pos = (absolutePointerPos - absoluteWindowOrigin - controlOrigin).to_winrt_point();
         myOption.Position(pos);
+
+        // The "Select command" and "Select output" buttons should only be
+        // visible if shell integration is actually turned on.
+        const auto shouldShowSelectCommand{ _core.ShouldShowSelectCommand() };
+        const auto shouldShowSelectOutput{ _core.ShouldShowSelectOutput() };
+        SelectCommandButton().Visibility(shouldShowSelectCommand ? Visibility::Visible : Visibility::Collapsed);
+        SelectOutputButton().Visibility(shouldShowSelectOutput ? Visibility::Visible : Visibility::Collapsed);
+        SelectCommandWithSelectionButton().Visibility(shouldShowSelectCommand ? Visibility::Visible : Visibility::Collapsed);
+        SelectOutputWithSelectionButton().Visibility(shouldShowSelectOutput ? Visibility::Visible : Visibility::Collapsed);
 
         (_core.HasSelection() ? SelectionContextMenu() :
                                 ContextMenu())
@@ -3368,4 +3389,19 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         SearchMatch(false);
     }
 
+    void TermControl::_SelectCommandHandler(const IInspectable& /*sender*/,
+                                            const IInspectable& /*args*/)
+    {
+        ContextMenu().Hide();
+        SelectionContextMenu().Hide();
+        _core.ContextMenuSelectCommand();
+    }
+
+    void TermControl::_SelectOutputHandler(const IInspectable& /*sender*/,
+                                           const IInspectable& /*args*/)
+    {
+        ContextMenu().Hide();
+        SelectionContextMenu().Hide();
+        _core.ContextMenuSelectOutput();
+    }
 }

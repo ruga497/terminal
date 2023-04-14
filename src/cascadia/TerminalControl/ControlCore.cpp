@@ -2182,6 +2182,114 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         }
     }
 
+    void ControlCore::SelectCommand(const bool goUp)
+    {
+        const til::point start = HasSelection() ? (goUp ? _terminal->GetSelectionAnchor() : _terminal->GetSelectionEnd()) :
+                                                  _terminal->GetTextBuffer().GetCursor().GetPosition();
+        SelectCommandWithAnchor(goUp, start);
+    }
+    void ControlCore::SelectCommandWithAnchor(const bool goUp, const til::point start)
+    {
+        std::optional<DispatchTypes::ScrollMark> nearest{ std::nullopt };
+        const auto& marks{ _terminal->GetScrollMarks() };
+        for (const auto& m : marks)
+        {
+            // If this mark doesn't know anything about the position of its
+            // command, OR it does but thinks that it was empty, then just skip
+            // it.
+            if (!m.HasCommand())
+            {
+                continue;
+            }
+            // If this mark is before/after the start of our search in the
+            // buffer, ...
+
+            const auto inTheRightDirection = (goUp && (m.commandEnd <= start)) || // prev
+                                             (!goUp && (m.end > start)); // next
+            // (If we're going down, we need to compare the end, not the
+            // commandEnd, to actually find the next one. Otherwise we'll just
+            // find the mark of the current selection again.
+            if (inTheRightDirection)
+            {
+                // ... and we either haven't found a match, or the current nearest
+                // is after/before this mark in the buffer
+                if (!nearest.has_value() ||
+                    ((goUp && (*m.commandEnd > *nearest->commandEnd)) || // prev
+                     (!goUp && (m.end < *nearest->commandEnd)))) // next
+                {
+                    // stash this as the new match
+                    nearest = m;
+                }
+            }
+        }
+
+        if (nearest.has_value())
+        {
+            const auto start = nearest->end;
+            auto end = *nearest->commandEnd;
+
+            const auto bufferSize{ _terminal->GetTextBuffer().GetSize() };
+            bufferSize.DecrementInBounds(end);
+
+            auto lock = _terminal->LockForWriting();
+            _terminal->SelectNewRegion(start, end);
+            _renderer->TriggerSelection();
+        }
+    }
+
+    void ControlCore::SelectOutput(const bool goUp)
+    {
+        const til::point start = HasSelection() ? (goUp ? _terminal->GetSelectionAnchor() : _terminal->GetSelectionEnd()) :
+                                                  _terminal->GetTextBuffer().GetCursor().GetPosition();
+        SelectOutputWithAnchor(goUp, start);
+    }
+    void ControlCore::SelectOutputWithAnchor(const bool goUp, const til::point start)
+    {
+        std::optional<DispatchTypes::ScrollMark> nearest{ std::nullopt };
+        const auto& marks{ _terminal->GetScrollMarks() };
+        for (const auto& m : marks)
+        {
+            // If this mark doesn't know anything about the position of its
+            // output, OR it does but thinks that it was empty, then just skip
+            // it.
+            if (!m.HasOutput())
+            {
+                continue;
+            }
+            // If this mark is before/after the start of our search in the buffer, ...
+            const auto inTheRightDirection = (goUp && (m.outputEnd <= start)) || // prev
+                                             (!goUp && (m.commandEnd > start)); // next
+            // (If we're going down, we need to compare the commandEnd, not the
+            // outputEnd, to actually find the next one. Otherwise we'll just
+            // find the mark of the current selection again.)
+            if (inTheRightDirection)
+            {
+                // .. and we either haven't found a match, or the current
+                // nearest is after this mark in the buffer
+                if (!nearest.has_value() ||
+                    ((goUp && (*m.outputEnd > *nearest->outputEnd)) || // prev
+                     (!goUp && (*m.commandEnd < *nearest->outputEnd)))) // next
+                {
+                    // stash this as the new match
+                    nearest = m;
+                }
+            }
+        }
+
+        if (nearest.has_value())
+        {
+            const auto start = *nearest->commandEnd;
+            auto end = *nearest->outputEnd;
+
+            const auto bufferSize{ _terminal->GetTextBuffer().GetSize() };
+            bufferSize.DecrementInBounds(end);
+
+            auto lock = _terminal->LockForWriting();
+            _terminal->SelectNewRegion(start, end);
+            _renderer->TriggerSelection();
+        }
+    }
+
     void ControlCore::ColorSelection(const Control::SelectionColor& fg, const Control::SelectionColor& bg, Core::MatchMode matchMode)
     {
         if (HasSelection())
@@ -2216,5 +2324,138 @@ namespace winrt::Microsoft::Terminal::Control::implementation
                 _renderer->TriggerRedrawAll();
             }
         }
+    }
+
+    void ControlCore::AnchorContextMenu(const til::point viewportRelativeCharacterPosition)
+    {
+        // viewportRelativeCharacterPosition is relative to the current
+        // viewport, so adjust for that:
+        _contextMenuBufferPosition = _terminal->GetViewport().Origin() + viewportRelativeCharacterPosition;
+    }
+
+    void ControlCore::ContextMenuSelectCommand()
+    {
+        const auto& marks{ _terminal->GetScrollMarks() };
+        for (auto&& m : marks)
+        {
+            if (!m.HasCommand())
+            {
+                continue;
+            }
+            // If they clicked _anywhere_ in the mark...
+            const auto [markStart, markEnd] = m.GetExtent();
+            if (markStart <= _contextMenuBufferPosition &&
+                markEnd >= _contextMenuBufferPosition)
+            {
+                // Select the command
+                const auto start = m.end;
+                auto end = *m.commandEnd;
+
+                const auto bufferSize{ _terminal->GetTextBuffer().GetSize() };
+                bufferSize.DecrementInBounds(end);
+
+                auto lock = _terminal->LockForWriting();
+                _terminal->SelectNewRegion(start, end);
+                _renderer->TriggerSelection();
+                return;
+            }
+        }
+    }
+    void ControlCore::ContextMenuSelectOutput()
+    {
+        const auto& marks{ _terminal->GetScrollMarks() };
+        for (auto&& m : marks)
+        {
+            if (!m.HasOutput())
+            {
+                continue;
+            }
+            // If they clicked _anywhere_ in the mark...
+            const auto [markStart, markEnd] = m.GetExtent();
+            if (markStart <= _contextMenuBufferPosition &&
+                markEnd >= _contextMenuBufferPosition)
+            {
+                // Select the output
+                const auto start = *m.commandEnd;
+                auto end = *m.outputEnd;
+
+                const auto bufferSize{ _terminal->GetTextBuffer().GetSize() };
+                bufferSize.DecrementInBounds(end);
+
+                auto lock = _terminal->LockForWriting();
+                _terminal->SelectNewRegion(start, end);
+                _renderer->TriggerSelection();
+                return;
+            }
+        }
+    }
+
+    // Method Description:
+    // * Don't show this if the click was on the _current_ selection
+    // * Don't show this if the click wasn't on a mark with at least a command
+    // * Otherwise yea, show it.
+    bool ControlCore::ShouldShowSelectCommand()
+    {
+        // Relies on the anchor set in AnchorContextMenu
+
+        // Don't show this if the click was on the selection
+        if (_terminal->IsSelectionActive() &&
+            _terminal->GetSelectionAnchor() <= _contextMenuBufferPosition &&
+            _terminal->GetSelectionEnd() >= _contextMenuBufferPosition)
+        {
+            return false;
+        }
+
+        // DO show this if the click was on a mark with a command
+        const auto& marks{ _terminal->GetScrollMarks() };
+        for (auto&& m : marks)
+        {
+            if (!m.HasOutput())
+            {
+                continue;
+            }
+            const auto [start, end] = m.GetExtent();
+            if (start <= _contextMenuBufferPosition &&
+                end >= _contextMenuBufferPosition)
+            {
+                return true;
+            }
+        }
+
+        // Didn't click on a mark with a command - don't show.
+        return false;
+    }
+
+    // Method Description:
+    // * Same as ShouldShowSelectCommand, but with the mark needing output
+    bool ControlCore::ShouldShowSelectOutput()
+    {
+        // Relies on the anchor set in AnchorContextMenu
+
+        // Don't show this if the click was on the selection
+        if (_terminal->IsSelectionActive() &&
+            _terminal->GetSelectionAnchor() <= _contextMenuBufferPosition &&
+            _terminal->GetSelectionEnd() >= _contextMenuBufferPosition)
+        {
+            return false;
+        }
+
+        // DO show this if the click was on a mark with output
+        const auto& marks{ _terminal->GetScrollMarks() };
+        for (auto&& m : marks)
+        {
+            if (!m.HasOutput())
+            {
+                continue;
+            }
+            const auto [start, end] = m.GetExtent();
+            if (start <= _contextMenuBufferPosition &&
+                end >= _contextMenuBufferPosition)
+            {
+                return true;
+            }
+        }
+        // Didn't click on a mark with output - don't show.
+        return false;
     }
 }
