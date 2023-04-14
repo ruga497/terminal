@@ -183,6 +183,7 @@ bool OutputStateMachineEngine::ActionPassThroughString(const std::wstring_view s
     if (_pTtyConnection != nullptr)
     {
         const auto hr = _pTtyConnection->WriteTerminalW(string);
+
         LOG_IF_FAILED(hr);
         success = SUCCEEDED(hr);
     }
