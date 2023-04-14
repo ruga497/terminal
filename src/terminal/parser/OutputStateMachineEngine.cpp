@@ -492,8 +492,13 @@ bool OutputStateMachineEngine::ActionCsiDispatch(const VTID id, const VTParamete
         success = _dispatch->CursorPosition(parameters.at(0), parameters.at(1));
         TermTelemetry::Instance().Log(TermTelemetry::Codes::CUP);
         break;
-    case CsiActionCodes::DECSTBM_SetScrollingRegion:
+    case CsiActionCodes::DECSTBM_SetTopBottomMargins:
         success = _dispatch->SetTopBottomScrollingMargins(parameters.at(0).value_or(0), parameters.at(1).value_or(0));
+        TermTelemetry::Instance().Log(TermTelemetry::Codes::DECSTBM);
+        break;
+    case CsiActionCodes::DECSLRM_SetLeftRightMargins:
+        // Note that this can also be ANSISYSSC, depending on the state of DECLRMM.
+        success = _dispatch->SetLeftRightScrollingMargins(parameters.at(0).value_or(0), parameters.at(1).value_or(0));
         TermTelemetry::Instance().Log(TermTelemetry::Codes::DECSTBM);
         break;
     case CsiActionCodes::ICH_InsertCharacter:
@@ -589,12 +594,8 @@ bool OutputStateMachineEngine::ActionCsiDispatch(const VTID id, const VTParamete
         success = _dispatch->ScrollDown(parameters.at(0));
         TermTelemetry::Instance().Log(TermTelemetry::Codes::SD);
         break;
-    case CsiActionCodes::ANSISYSSC_CursorSave:
-        success = parameters.empty() && _dispatch->CursorSaveState();
-        TermTelemetry::Instance().Log(TermTelemetry::Codes::ANSISYSSC);
-        break;
     case CsiActionCodes::ANSISYSRC_CursorRestore:
-        success = parameters.empty() && _dispatch->CursorRestoreState();
+        success = _dispatch->CursorRestoreState();
         TermTelemetry::Instance().Log(TermTelemetry::Codes::ANSISYSRC);
         break;
     case CsiActionCodes::IL_InsertLine:
