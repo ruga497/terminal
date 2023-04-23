@@ -123,6 +123,11 @@ namespace til
         private:
             utf16_iterator& _iter;
         };
+        
+        explicit constexpr utf16_iterator(std::wstring_view::iterator it, std::wstring_view::iterator end) noexcept :
+            _it{ it }, _end{ end }, _advance{ _it != _end }
+        {
+        }
 
         explicit constexpr utf16_iterator(std::wstring_view wstr) noexcept :
             _it{ wstr.begin() }, _end{ wstr.end() }, _advance{ _it != _end }
